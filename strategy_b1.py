@@ -328,6 +328,111 @@ def calculate_indicators(df):
 
     return df
 
+def has_gap_in_past_days(df, days=40):
+    """
+    检查过去N天是否有跳空缺口
+
+    跳空定义：
+    - 向上跳空：当日最低价 > 前日最高价（low[i] > high[i-1]）
+    - 向下跳空：当日最高价 < 前日最低价（high[i] < low[i-1]）
+
+    Args:
+        df: K线数据DataFrame，包含 high, low, close, open 列
+        days: 检查天数（默认40天）
+
+    Returns:
+        True: 过去N天内有跳空（过滤掉该股票）
+        False: 过去N天内无跳空（保留该股票）
+    """
+    if df is None or len(df) < 2:
+        return False
+
+    # 取过去N天的数据（最后N行）
+    # 由于我们要检查相邻K线，所以需要 days+1 行数据
+    start_idx = max(0, len(df) - days - 1)
+    check_df = df.iloc[start_idx:]
+
+    # 遍历检查相邻K线之间的跳空
+    for i in range(1, len(check_df)):
+        curr = check_df.iloc[i]
+        prev = check_df.iloc[i-1]
+
+        # 向上跳空：当日最低价 > 前日最高价
+        if curr['low'] > prev['high']:
+            return True
+
+        # 向下跳空：当日最高价 < 前日最低价
+        if curr['high'] < prev['low']:
+            return True
+
+    return False
+
+def has_top_volume_stagnant_in_past_days(df, days=40, ma_period=20,
+                                         volume_threshold=1.5,
+                                         up_strength_threshold=0.01):
+    """
+    检查过去N天是否有"高位放量但滞涨"的现象
+
+    顶部放量滞涨定义（三个条件同时满足）：
+    1. 高位：close > MA20（股价高于20日均线）
+    2. 放量：volume > vol_ma20 × 1.5（成交量1.5倍20日均量）
+    3. 滞涨或阴线：
+       - 阴线：close < open
+       - 弱阳线：(close - open) / open <= 1%
+
+    Args:
+        df: K线数据DataFrame，包含 close, open, volume, high, low 列
+        days: 检查天数（默认40天）
+        ma_period: 均线周期（默认20日）
+        volume_threshold: 放量倍数阈值（默认1.5倍）
+        up_strength_threshold: 阳线强度阈值（默认0.01 = 1%）
+
+    Returns:
+        True: 检测到高位放量+滞涨 → 过滤
+        False: 无此现象 → 保留
+    """
+    if df is None or len(df) < ma_period + 1:
+        return False
+
+    # 计算均线（如果还未计算）
+    if 'ma20' not in df.columns:
+        df['ma20'] = df['close'].rolling(window=ma_period).mean()
+    if 'vol_ma20' not in df.columns:
+        df['vol_ma20'] = df['volume'].rolling(window=ma_period).mean()
+
+    # 取过去N天的数据
+    start_idx = max(0, len(df) - days)
+    check_df = df.iloc[start_idx:]
+
+    # 遍历检查是否出现"高位放量但滞涨"
+    for i in range(len(check_df)):
+        row = check_df.iloc[i]
+
+        # 检查均线值是否有效
+        if pd.isna(row['ma20']) or pd.isna(row['vol_ma20']):
+            continue
+
+        # 条件1：高位（close > MA20）
+        is_high_price = row['close'] > row['ma20']
+
+        # 条件2：放量（volume > vol_ma20 × threshold）
+        is_high_volume = row['volume'] > row['vol_ma20'] * volume_threshold
+
+        # 条件3：滞涨或阴线
+        #   ├─ 阴线：close < open
+        #   ├─ 弱阳线：close > open 且 (close-open)/open <= threshold
+        is_stagnant = (
+            row['close'] < row['open'] or  # 阴线
+            (row['close'] > row['open'] and
+             (row['close'] - row['open']) / row['open'] < up_strength_threshold)
+        )
+
+        # 三个条件同时满足 → 检测到危险信号
+        if is_high_price and is_high_volume and is_stagnant:
+            return True
+
+    return False
+
 def analyze_stock(code):
     """分析单只股票"""
     df = get_kline_data(code)
@@ -361,7 +466,15 @@ def analyze_stock(code):
         # 5. 当日交易量小于最近12天交易量均量的52%
         cond5 = curr['volume'] < (curr['vol_ma12'] * 0.52)
 
-        if cond1 and cond2 and cond3 and cond4 and cond5:
+        # 6. 过去40天无跳空缺口（避免有缺口的股票）
+        cond6 = not has_gap_in_past_days(df, days=40)
+
+        # 7. 过去40天无高位放量但滞涨的现象（避免见顶股票）
+        cond7 = not has_top_volume_stagnant_in_past_days(df, days=40, ma_period=20,
+                                                         volume_threshold=1.5,
+                                                         up_strength_threshold=0.01)
+
+        if cond1 and cond2 and cond3 and cond4 and cond5 and cond6 and cond7:
             # 获取股票名称
             name = get_stock_name(code)
 
