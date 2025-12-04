@@ -1,0 +1,55 @@
+# ==========================================
+# SSH 配置文件
+# ==========================================
+# 用途: 简化 SSH 连接命令
+# 使用方法:
+#   1. 复制此文件内容到 ~/.ssh/config
+#   2. 或者执行: cat deploy/ssh-config >> ~/.ssh/config
+#   3. 连接: ssh tdx-stock
+# ==========================================
+
+Host tdx-stock
+    HostName 139.155.158.47
+    User root
+    Port 22
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+    # 如果配置了 SSH 密钥，取消下面的注释
+    # IdentityFile ~/.ssh/id_rsa
+
+# 别名配置
+Host tdx
+    HostName 139.155.158.47
+    User root
+    Port 22
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+
+# ==========================================
+# 配置说明:
+# ==========================================
+# ServerAliveInterval: 每 60 秒发送心跳包保持连接
+# ServerAliveCountMax: 最多发送 3 次心跳包无响应后断开
+# IdentityFile: 指定 SSH 私钥文件路径
+# ==========================================
+
+# ==========================================
+# 使用示例:
+# ==========================================
+#
+# 1. 连接服务器
+#    ssh tdx-stock
+#
+# 2. 复制文件到服务器
+#    scp file.txt tdx-stock:/opt/tdx-stock/
+#
+# 3. 从服务器下载文件
+#    scp tdx-stock:/opt/tdx-stock/stocks.db ./
+#
+# 4. 执行远程命令
+#    ssh tdx-stock 'docker-compose ps'
+#
+# 5. 端口转发 (本地访问服务器端口)
+#    ssh -L 8080:localhost:8080 tdx-stock
+#
+# ==========================================

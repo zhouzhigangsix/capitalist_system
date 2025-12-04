@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能选股中心 | Alpha Hunter</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* 页面特定样式 */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .status-badge::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .badge-hot {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+        }
+
+        .badge-cool {
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
+        }
+
+        .action-btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .action-btn:hover {
+            background: var(--primary-color);
+            color: white;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+            display: block;
+        }
+
+        .stat-card {
+            text-align: center;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 5px;
+        }
+
+        .stat-value.positive {
+            color: var(--success-color);
+        }
+
+        .stat-value.negative {
+            color: var(--danger-color);
+        }
+
+        .stat-trend {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <header class="header">
+            <div style="position: absolute; left: 0; top: 0;">
+                <a href="index.html" class="nav-link">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7" />
+                    </svg>
+                    返回行情中心
+                </a>
+            </div>
+            <h1>Alpha Hunter</h1>
+            <p class="subtitle">智能量化选股策略中心</p>
+        </header>
+
+        <!-- 筛选控制台 -->
+        <div class="filter-section">
+            <div class="filter-item">
+                <label>策略模型</label>
+                <select id="strategySelect">
+                    <option value="b1">B1 战法 (多空线突破 + KDJ超卖)</option>
+                </select>
+            </div>
+            <div class="filter-item">
+                <label>回测/查询日期</label>
+                <input type="date" id="dateSelect">
+            </div>
+            <div style="flex: 1;"></div>
+            <button onclick="loadResults()" class="btn-primary">
+                执行筛选
+            </button>
+        </div>
+
+        <!-- 回测结果卡片 -->
+        <div id="backtestCard" class="card" style="margin-bottom: 20px; display: none;">
+            <div class="card-header">
+                <h2>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        style="color: var(--success-color);">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                    </svg>
+                    前日回测收益
+                </h2>
+                <p class="subtitle" id="backtestDate">加载中...</p>
+            </div>
+            <div class="card-body">
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;">
+                    <!-- 日均收益 -->
+                    <div class="stat-card">
+                        <div class="stat-label">
+                            日均收益率
+                            <button id="detailsBtn" onclick="showBacktestDetails()" style="margin-left: 8px; padding: 2px 8px; font-size: 0.75rem; background: var(--primary-color); color: white; border: none; border-radius: 4px; cursor: pointer; display: none;">详细</button>
+                        </div>
+                        <div class="stat-value" id="avgReturn" style="font-size: 2rem;">--</div>
+                        <div class="stat-trend" id="avgReturnTrend"></div>
+                    </div>
+                    <!-- 胜率 -->
+                    <div class="stat-card">
+                        <div class="stat-label">胜率</div>
+                        <div class="stat-value" id="winRate" style="font-size: 2rem;">--</div>
+                        <div class="stat-trend" id="winRateTrend"></div>
+                    </div>
+                    <!-- 盈利/亏损比 -->
+                    <div class="stat-card">
+                        <div class="stat-label">盈/亏比</div>
+                        <div class="stat-value" id="winLoseRatio" style="font-size: 2rem;">--</div>
+                        <div class="stat-trend" id="winLoseTrend"></div>
+                    </div>
+                    <!-- 有效样本 -->
+                    <div class="stat-card">
+                        <div class="stat-label">有效样本数</div>
+                        <div class="stat-value" id="validCount" style="font-size: 2rem;">--</div>
+                        <div class="stat-trend" id="validCountTrend"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 数据可视化卡片 -->
+        <div class="card" style="margin-bottom: 20px;">
+            <div class="card-header">
+                <h2>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        style="color: var(--primary-color);">
+                        <path d="M3 3v18h18" />
+                        <path d="M18 17V9" />
+                        <path d="M13 17V5" />
+                        <path d="M8 17v-3" />
+                    </svg>
+                    数据分析
+                </h2>
+                <p class="subtitle">评分分布与趋势分析</p>
+            </div>
+            <div class="card-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <!-- 评分分布图 -->
+                    <div>
+                        <h3 style="font-size: 0.95rem; margin-bottom: 15px; color: var(--text-secondary);">评分分布</h3>
+                        <div id="scoreDistChart" style="height: 300px;"></div>
+                    </div>
+                    <!-- 历史趋势图 -->
+                    <div>
+                        <h3 style="font-size: 0.95rem; margin-bottom: 15px; color: var(--text-secondary);">选股数量趋势</h3>
+                        <div id="trendChart" style="height: 300px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 结果展示卡片 -->
+        <div class="card">
+            <div class="card-header">
+                <h2>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        style="color: var(--primary-color);">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                        <path d="M22 4L12 14.01l-3-3" />
+                    </svg>
+                    筛选结果
+                    <span id="resultCount"
+                        style="font-size: 0.9rem; color: var(--text-secondary); margin-left: 12px; font-weight: 400;">
+                        加载中...
+                    </span>
+                </h2>
+                <div style="display: flex; gap: 10px;">
+                    <button class="action-btn" onclick="exportCSV()">导出 CSV</button>
+                </div>
+            </div>
+
+            <div style="overflow-x: auto;">
+                <table class="result-table">
+                    <thead>
+                        <tr>
+                            <th>综合评分</th>
+                            <th>股票代码</th>
+                            <th>名称</th>
+                            <th>最新价格</th>
+                            <th>KDJ.J 指标</th>
+                            <th>日振幅</th>
+                            <th>量比</th>
+                            <th>趋势强度</th>
+                            <th>信号日期</th>
+                            <th style="text-align: right;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultBody">
+                        <!-- 数据注入区 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    <!-- 回测详情弹窗 -->
+    <div id="backtestModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: var(--card-bg); border-radius: 12px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
+            <div style="padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; font-size: 1.25rem;">回测详细信息</h3>
+                <button onclick="closeBacktestDetails()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary);">&times;</button>
+            </div>
+            <div style="padding: 20px;">
+                <!-- 盈利股票 -->
+                <div style="margin-bottom: 24px;">
+                    <h4 style="color: var(--success-color); margin-bottom: 12px; font-size: 1rem;">
+                        📈 盈利股票 (<span id="winStocksCount">0</span>)
+                    </h4>
+                    <div id="winStocksList" style="display: flex; flex-direction: column; gap: 8px;">
+                        <!-- 动态填充 -->
+                    </div>
+                </div>
+
+                <!-- 亏损股票 -->
+                <div>
+                    <h4 style="color: var(--danger-color); margin-bottom: 12px; font-size: 1rem;">
+                        📉 亏损股票 (<span id="loseStocksCount">0</span>)
+                    </h4>
+                    <div id="loseStocksList" style="display: flex; flex-direction: column; gap: 8px;">
+                        <!-- 动态填充 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+        <!-- 加载遮罩 -->
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p style="margin-top: 20px; color: white; font-weight: 500;">正在扫描全市场数据...</p>
+        </div>
+    </div>
+
+    <script>
+        // 初始化日期为今天
+        document.getElementById('dateSelect').valueAsDate = new Date();
+
+        let currentData = [];
+
+        async function loadResults() {
+            const strategy = document.getElementById('strategySelect').value;
+            const date = document.getElementById('dateSelect').value;
+
+            // 检查是否选择今天且在20:08之前
+            const today = new Date().toISOString().split('T')[0];
+            const currentTime = new Date();
+            const currentHour = currentTime.getHours();
+            const currentMinute = currentTime.getMinutes();
+
+            if (date === today && (currentHour < 20 || (currentHour === 20 && currentMinute < 8))) {
+                // 显示等待提示
+                const tbody = document.getElementById('resultBody');
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8">
+                            <div class="empty-state">
+                                <span class="empty-icon">⏰</span>
+                                <p>等待数据更新</p>
+                                <p style="font-size: 0.9rem; color: var(--text-secondary); margin-top: 8px;">
+                                    每天 20:08 自动更新当日选股数据和回测结果
+                                </p>
+                            </div>
+                        </td>
+                    </tr>`;
+                document.getElementById('resultCount').textContent = '(等待更新)';
+                // 同时加载回测结果（也会显示等待提示）
+                loadBacktestResults();
+                return;
+            }
+
+            showLoading(true);
+            try {
+                const response = await fetch(`/api/strategy/results?strategy=${strategy}&date=${date}`);
+                const res = await response.json();
+
+                if (res.code === 0) {
+                    currentData = res.data;
+                    renderTable(res.data);
+                    // 同时加载回测结果
+                    loadBacktestResults();
+                } else {
+                    alert('查询失败: ' + res.message);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('网络请求失败，请检查服务状态');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('resultBody');
+            const countSpan = document.getElementById('resultCount');
+            tbody.innerHTML = '';
+
+            if (!data || data.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8">
+                            <div class="empty-state">
+                                <span class="empty-icon">📭</span>
+                                <p>该日期下未发现符合策略的标的</p>
+                            </div>
+                        </td>
+                    </tr>`;
+                countSpan.textContent = '(0)';
+                return;
+            }
+
+            countSpan.textContent = `(共发现 ${data.length} 只标的)`;
+
+            data.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.style.cursor = 'pointer';
+                tr.onclick = (e) => {
+                    if (e.target.tagName === 'BUTTON') return;
+                    window.location.href = `index.html?code=${item.code}`;
+                };
+
+                // 格式化数据
+                const score = item.score || 0;
+                const scoreLevel = item.score_level || '⭐';
+                const jValClass = item.j_val < 0 ? 'tag-success' : (item.j_val > 80 ? 'tag-danger' : '');
+                const volClass = item.vol_ratio > 0.5 ? 'badge-cool' : 'badge-cool';
+                const trendStrength = item.trend_strength || 0;
+
+                // 评分颜色
+                let scoreColor = '#64748b';
+                if (score >= 90) scoreColor = '#10b981';
+                else if (score >= 80) scoreColor = '#22c55e';
+                else if (score >= 70) scoreColor = '#3b82f6';
+                else if (score >= 60) scoreColor = '#f59e0b';
+
+                tr.innerHTML = `
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 1.4rem; font-weight: 700; color: ${scoreColor};">${score.toFixed(0)}</span>
+                            <span style="font-size: 0.9rem;">${scoreLevel}</span>
+                        </div>
+                        <div style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 2px;">${item.score_detail || ''}</div>
+                    </td>
+                    <td><span class="stock-code">${item.code}</span></td>
+                    <td style="font-weight: 600;">${item.name || '--'}</td>
+                    <td class="price">${(item.price / 100).toFixed(2)}</td>
+                    <td><span class="tag ${jValClass}">${item.j_val.toFixed(2)}</span></td>
+                    <td>${item.amplitude.toFixed(2)}%</td>
+                    <td><span class="status-badge ${volClass}">${(item.vol_ratio * 100).toFixed(0)}%</span></td>
+                    <td>${trendStrength >= 0 ? '+' : ''}${trendStrength.toFixed(2)}%</td>
+                    <td style="color: var(--text-secondary);">${item.date}</td>
+                    <td style="text-align: right;">
+                        <button class="action-btn" onclick="window.location.href='index.html?code=${item.code}'">
+                            分析
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // 更新图表
+            renderCharts(data);
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'flex' : 'none';
+        }
+
+        function exportCSV() {
+            if (!currentData || currentData.length === 0) {
+                alert('暂无数据可导出');
+                return;
+            }
+
+            const headers = ['代码', '名称', '价格', 'J值', '振幅', '量比', '日期'];
+            const csvContent = [
+                headers.join(','),
+                ...currentData.map(row => [
+                    row.code,
+                    row.name || '',
+                    row.price,
+                    row.j_val,
+                    row.amplitude,
+                    row.vol_ratio,
+                    row.date
+                ].join(','))
+            ].join('\n');
+
+            const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `strategy_results_${new Date().toISOString().slice(0, 10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // 渲染图表
+        function renderCharts(data) {
+            if (!data || data.length === 0) return;
+
+            renderScoreDistribution(data);
+            renderTrendChart();
+        }
+
+        // 评分分布直方图
+        function renderScoreDistribution(data) {
+            const chart = echarts.init(document.getElementById('scoreDistChart'));
+
+            // 统计各分数段的数量
+            const scoreRanges = [
+                { name: '0-50', min: 0, max: 50, count: 0 },
+                { name: '51-60', min: 51, max: 60, count: 0 },
+                { name: '61-70', min: 61, max: 70, count: 0 },
+                { name: '71-80', min: 71, max: 80, count: 0 },
+                { name: '81-90', min: 81, max: 90, count: 0 },
+                { name: '91-100', min: 91, max: 100, count: 0 }
+            ];
+
+            data.forEach(item => {
+                const score = item.score || 0;
+                for (let range of scoreRanges) {
+                    if (score >= range.min && score <= range.max) {
+                        range.count++;
+                        break;
+                    }
+                }
+            });
+
+            const option = {
+                backgroundColor: 'transparent',
+                textStyle: {
+                    color: '#94a3b8'
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'shadow'
+                    },
+                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                    borderColor: '#334155',
+                    textStyle: {
+                        color: '#e2e8f0'
+                    }
+                },
+                grid: {
+                    left: '10%',
+                    right: '5%',
+                    bottom: '15%',
+                    top: '10%'
+                },
+                xAxis: {
+                    type: 'category',
+                    data: scoreRanges.map(r => r.name),
+                    axisLine: {
+                        lineStyle: { color: '#334155' }
+                    },
+                    axisLabel: {
+                        color: '#94a3b8'
+                    }
+                },
+                yAxis: {
+                    type: 'value',
+                    axisLine: {
+                        lineStyle: { color: '#334155' }
+                    },
+                    splitLine: {
+                        lineStyle: { color: '#1e293b' }
+                    },
+                    axisLabel: {
+                        color: '#94a3b8'
+                    }
+                },
+                series: [{
+                    name: '股票数量',
+                    type: 'bar',
+                    data: scoreRanges.map(r => r.count),
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: '#3b82f6' },
+                            { offset: 1, color: '#1d4ed8' }
+                        ]),
+                        borderRadius: [4, 4, 0, 0]
+                    },
+                    emphasis: {
+                        itemStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: '#60a5fa' },
+                                { offset: 1, color: '#3b82f6' }
+                            ])
+                        }
+                    }
+                }]
+            };
+
+            chart.setOption(option);
+            window.addEventListener('resize', () => chart.resize());
+        }
+
+        // 历史趋势图
+        async function renderTrendChart() {
+            const chart = echarts.init(document.getElementById('trendChart'));
+
+            try {
+                // 获取最近7天的数据
+                const today = new Date();
+                const dates = [];
+                for (let i = 6; i >= 0; i--) {
+                    const d = new Date(today);
+                    d.setDate(d.getDate() - i);
+                    dates.push(d.toISOString().split('T')[0]);
+                }
+
+                const strategy = document.getElementById('strategySelect').value;
+                const promises = dates.map(date =>
+                    fetch(`/api/strategy/results?strategy=${strategy}&date=${date}`)
+                        .then(res => res.json())
+                        .then(data => ({ date, count: data.code === 0 ? (data.data?.length || 0) : 0 }))
+                        .catch(() => ({ date, count: 0 }))
+                );
+
+                const results = await Promise.all(promises);
+
+                const option = {
+                    backgroundColor: 'transparent',
+                    textStyle: {
+                        color: '#94a3b8'
+                    },
+                    tooltip: {
+                        trigger: 'axis',
+                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                        borderColor: '#334155',
+                        textStyle: {
+                            color: '#e2e8f0'
+                        }
+                    },
+                    grid: {
+                        left: '10%',
+                        right: '5%',
+                        bottom: '15%',
+                        top: '10%'
+                    },
+                    xAxis: {
+                        type: 'category',
+                        data: results.map(r => r.date.slice(5)),
+                        axisLine: {
+                            lineStyle: { color: '#334155' }
+                        },
+                        axisLabel: {
+                            color: '#94a3b8'
+                        }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        axisLine: {
+                            lineStyle: { color: '#334155' }
+                        },
+                        splitLine: {
+                            lineStyle: { color: '#1e293b' }
+                        },
+                        axisLabel: {
+                            color: '#94a3b8'
+                        }
+                    },
+                    series: [{
+                        name: '选股数量',
+                        type: 'line',
+                        data: results.map(r => r.count),
+                        smooth: true,
+                        lineStyle: {
+                            color: '#10b981',
+                            width: 3
+                        },
+                        itemStyle: {
+                            color: '#10b981'
+                        },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(16, 185, 129, 0.3)' },
+                                { offset: 1, color: 'rgba(16, 185, 129, 0.05)' }
+                            ])
+                        }
+                    }]
+                };
+
+                chart.setOption(option);
+                window.addEventListener('resize', () => chart.resize());
+            } catch (error) {
+                console.error('Error loading trend data:', error);
+            }
+        }
+
+        // 加载回测结果
+        async function loadBacktestResults() {
+            const strategy = document.getElementById('strategySelect').value;
+            const selectedDate = document.getElementById('dateSelect').value;
+
+            // 检查是否选择了日期
+            if (!selectedDate) {
+                document.getElementById('backtestCard').style.display = 'none';
+                return;
+            }
+
+            // 检查是否是今天
+            const today = new Date().toISOString().split('T')[0];
+            const currentTime = new Date();
+            const currentHour = currentTime.getHours();
+            const currentMinute = currentTime.getMinutes();
+
+            // 如果选择的是今天，且当前时间在20:08之前，显示提示
+            if (selectedDate === today && (currentHour < 20 || (currentHour === 20 && currentMinute < 8))) {
+                document.getElementById('backtestCard').style.display = 'block';
+                document.getElementById('backtestDate').textContent = '等待数据更新（每天20:08更新）';
+
+                // 显示提示信息
+                document.getElementById('avgReturn').textContent = '--';
+                document.getElementById('avgReturn').className = 'stat-value';
+                document.getElementById('avgReturnTrend').textContent = '20:08后更新';
+
+                document.getElementById('winRate').textContent = '--';
+                document.getElementById('winRate').className = 'stat-value';
+                document.getElementById('winRateTrend').textContent = '20:08后更新';
+
+                document.getElementById('winLoseRatio').textContent = '--';
+                document.getElementById('winLoseRatio').className = 'stat-value';
+                document.getElementById('winLoseTrend').textContent = '20:08后更新';
+
+                document.getElementById('validCount').textContent = '--';
+                document.getElementById('validCountTrend').textContent = '20:08后更新';
+                return;
+            }
+
+            try {
+                // 获取指定日期的回测结果
+                // 逻辑：选股日期D → 次日卖出（跳过周末）→ 查询该卖出日期的回测数据
+                // 例如：11-28(周五)选股 → 12-01(周一)卖出 → 查询12-01的回测数据
+                const selectDate = new Date(selectedDate);
+                let nextDate = new Date(selectDate);
+
+                // 循环找到下一个交易日（周一到周五）
+                // JavaScript中：getDay() 返回 0=周日, 1=周一, ..., 6=周六
+                do {
+                    nextDate.setDate(nextDate.getDate() + 1);
+                    const dayOfWeek = nextDate.getDay();
+                    // 交易日：周一(1)到周五(5)
+                    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+                        break;
+                    }
+                } while (true);
+
+                const nextDateStr = nextDate.toISOString().split('T')[0];
+
+                const response = await fetch(`/api/backtest/results?strategy=${strategy}&date=${nextDateStr}&limit=1`);
+                const res = await response.json();
+
+                if (res.code === 0 && res.data.results && res.data.results.length > 0) {
+                    const result = res.data.results[0];
+
+                    // 显示回测卡片
+                    document.getElementById('backtestCard').style.display = 'block';
+
+                    // 等待DOM更新后再操作按钮
+                    setTimeout(() => {
+                        // 保存details数据并显示"详细"按钮
+                        console.log('回测结果 result:', result);
+                        console.log('details字段:', result.details);
+                        console.log('details类型:', typeof result.details);
+
+                        if (result.details) {
+                            try {
+                                window.currentBacktestDetails = JSON.parse(result.details);
+                                console.log('解析后的details:', window.currentBacktestDetails);
+                                const btn = document.getElementById('detailsBtn');
+                                console.log('找到的按钮元素:', btn);
+                                if (btn) {
+                                    btn.style.display = 'inline-block';
+                                    console.log('已显示详细按钮');
+                                } else {
+                                    console.error('找不到detailsBtn元素');
+                                }
+                            } catch (e) {
+                                console.error('解析details失败:', e);
+                                window.currentBacktestDetails = null;
+                            }
+                        } else {
+                            console.log('没有details数据');
+                            window.currentBacktestDetails = null;
+                        }
+                    }, 100);
+
+                    // 计算选股日期（卖出日期的前一天）
+                    const sellDate = new Date(result.date);
+                    const selectDate = new Date(sellDate);
+                    selectDate.setDate(selectDate.getDate() - 1);
+                    const selectDateStr = selectDate.toISOString().split('T')[0];
+
+                    // 更新日期说明
+                    document.getElementById('backtestDate').textContent = `${selectDateStr} 选股 → ${result.date} 卖出`;
+
+                    // 更新日均收益
+                    const avgReturn = result.avg_return;
+                    const avgReturnEl = document.getElementById('avgReturn');
+                    avgReturnEl.textContent = avgReturn >= 0 ? `+${avgReturn.toFixed(2)}%` : `${avgReturn.toFixed(2)}%`;
+                    avgReturnEl.className = 'stat-value ' + (avgReturn >= 0 ? 'positive' : 'negative');
+                    document.getElementById('avgReturnTrend').textContent = avgReturn >= 0 ? '↑ 盈利' : '↓ 亏损';
+
+                    // 更新胜率
+                    const winRate = result.win_rate;
+                    const winRateEl = document.getElementById('winRate');
+                    winRateEl.textContent = `${winRate.toFixed(1)}%`;
+                    winRateEl.className = 'stat-value ' + (winRate >= 50 ? 'positive' : 'negative');
+                    document.getElementById('winRateTrend').textContent = `${result.win_count}胜 / ${result.lose_count}负`;
+
+                    // 更新盈亏比
+                    const winLoseRatio = result.lose_count > 0 ? (result.win_count / result.lose_count).toFixed(2) : result.win_count.toFixed(2);
+                    const winLoseRatioEl = document.getElementById('winLoseRatio');
+                    winLoseRatioEl.textContent = winLoseRatio;
+                    winLoseRatioEl.className = 'stat-value ' + (winLoseRatio >= 1 ? 'positive' : 'negative');
+                    document.getElementById('winLoseTrend').textContent = winLoseRatio >= 1 ? '↑ 优势' : '↓ 劣势';
+
+                    // 更新有效样本数
+                    document.getElementById('validCount').textContent = result.valid_count;
+                    document.getElementById('validCountTrend').textContent = `原选${result.stock_count}只`;
+                } else {
+                    // 没有回测数据，隐藏卡片
+                    document.getElementById('backtestCard').style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error loading backtest results:', error);
+                document.getElementById('backtestCard').style.display = 'none';
+            }
+        }
+
+        // 显示回测详情弹窗
+        function showBacktestDetails() {
+            if (!window.currentBacktestDetails) {
+                alert('暂无详细数据');
+                return;
+            }
+
+            const details = window.currentBacktestDetails;
+            const modal = document.getElementById('backtestModal');
+
+            // 填充盈利股票
+            const winStocksList = document.getElementById('winStocksList');
+            const winStocks = details.win_stocks || [];
+            document.getElementById('winStocksCount').textContent = winStocks.length;
+
+            if (winStocks.length > 0) {
+                winStocksList.innerHTML = winStocks.map(stock => `
+                    <div style="padding: 12px; background: rgba(16, 185, 129, 0.1); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="font-weight: 600; color: var(--text-primary);">${stock.name}</span>
+                            <span style="color: var(--text-secondary); margin-left: 8px; font-size: 0.875rem;">${stock.code}</span>
+                        </div>
+                        <span style="color: var(--success-color); font-weight: 600; font-size: 1.1rem;">+${stock.pnl.toFixed(2)}%</span>
+                    </div>
+                `).join('');
+            } else {
+                winStocksList.innerHTML = '<p style="color: var(--text-secondary); text-align: center;">无</p>';
+            }
+
+            // 填充亏损股票
+            const loseStocksList = document.getElementById('loseStocksList');
+            const loseStocks = details.lose_stocks || [];
+            document.getElementById('loseStocksCount').textContent = loseStocks.length;
+
+            if (loseStocks.length > 0) {
+                loseStocksList.innerHTML = loseStocks.map(stock => `
+                    <div style="padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="font-weight: 600; color: var(--text-primary);">${stock.name}</span>
+                            <span style="color: var(--text-secondary); margin-left: 8px; font-size: 0.875rem;">${stock.code}</span>
+                        </div>
+                        <span style="color: var(--danger-color); font-weight: 600; font-size: 1.1rem;">${stock.pnl.toFixed(2)}%</span>
+                    </div>
+                `).join('');
+            } else {
+                loseStocksList.innerHTML = '<p style="color: var(--text-secondary); text-align: center;">无</p>';
+            }
+
+            // 显示弹窗
+            modal.style.display = 'flex';
+        }
+
+        // 关闭回测详情弹窗
+        function closeBacktestDetails() {
+            document.getElementById('backtestModal').style.display = 'none';
+        }
+
+        // 点击弹窗外部关闭
+        document.getElementById('backtestModal')?.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeBacktestDetails();
+            }
+        });
+
+        // 页面加载时自动查询
+        console.log('=== TDX Strategy Page v2.0 - 带回测详情 ===');
+        loadResults();
+        loadBacktestResults();
+    </script>
+</body>
+
+</html>
