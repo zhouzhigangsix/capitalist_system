@@ -11,6 +11,8 @@ services:
     restart: unless-stopped
     environment:
       - TZ=Asia/Shanghai
+    volumes:
+      - ./stocks.db:/app/stocks.db
     networks:
       - stock-network
     healthcheck:
